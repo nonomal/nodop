@@ -1,4 +1,4 @@
-FROM node:18.11.0-alpine3.16 as base
+FROM node:23.6.0-alpine3.20@sha256:6977602e02b3fee978f5927afbcc2f8990966c18838cf6bcd067373e2462ad65 as base
 
 FROM base as builder
 
@@ -12,14 +12,20 @@ RUN npm run build:release
 
 FROM base
 
+RUN addgroup -S appgroup && \
+  adduser -S appuser -G appgroup
+USER appuser
+
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY --chown=appuser:appgroup package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit
 
-COPY --from=builder /app/build ./build
+COPY --from=builder --chown=appuser:appgroup /app/build ./build
 
 ENV CONFIG_PATH /app/conf
 ENV CACHE_DIR /app/cache
+
+HEALTHCHECK NONE
 
 CMD ["node", "build/src/main.js", "--daemon"]
