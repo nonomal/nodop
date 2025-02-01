@@ -1,4 +1,4 @@
-FROM node:23.7.0-alpine3.20@sha256:3ac002b133fd3737c44b66f0d023f5d75c7a1ddec71954fa06486aed6aead888 as base
+FROM node:23.7.0-bookworm@sha256:73236efc6d24b792e476251b7bc7b000f45314d0e084dcd6af3d0a54489ad489 as base
 
 FROM base as builder
 
@@ -12,8 +12,8 @@ RUN npm run build:release
 
 FROM base
 
-RUN addgroup -S appgroup && \
-  adduser -S appuser -G appgroup
+RUN groupadd appgroup && \
+  useradd -g appgroup -m appuser
 USER appuser
 
 WORKDIR /app

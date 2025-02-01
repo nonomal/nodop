@@ -6,23 +6,29 @@ import {
   UnaryExpression,
   Expression,
   Parser,
-  Identifier,
+  Identifier
 } from './parser.js'
 import { TokenType } from './scanner.js'
-import { CustomValue, ObjectValue, PageValue } from './objects.js'
+import {
+  CustomValue,
+  NotionValue,
+  ObjectValue,
+  PageValue,
+  TimeValue
+} from './objects.js'
 
 export async function evaluate(
-  page: PageObjectResponse,
-  s: string,
+  page: PageObjectResponse | null,
+  s: string
 ): Promise<boolean | null> {
   const parser = new Parser(s)
   const expr = parser.parse()
-  return await evalExpression(page, expr)
+  return (await evalExpression(page, expr)) as boolean | null
 }
 
 async function evalExpression(
-  page: PageObjectResponse,
-  e: Expression,
+  page: PageObjectResponse | null,
+  e: Expression
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any> {
   if (e.type === 'call_expression') {
@@ -49,6 +55,7 @@ async function evalExpression(
     return evalIdentifier(page, e)
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (e.type === 'boolean' || e.type === 'string' || e.type === 'number') {
     return e.value
   }
@@ -57,16 +64,19 @@ async function evalExpression(
 }
 
 async function evalCallExpression(
-  page: PageObjectResponse,
-  e: CallExpression,
+  page: PageObjectResponse | null,
+  e: CallExpression
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any> {
   if (e.func === 'is_type') {
     if (e.args.length !== 2) {
       throw new Error('is_type takes exactly two arguments')
     }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const property = await evalExpression(page, e.args[0])
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const expectedType = await evalExpression(page, e.args[1])
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     return property.type === expectedType
   }
 
@@ -74,82 +84,91 @@ async function evalCallExpression(
     if (e.args.length !== 1) {
       throw new Error('is_empty takes exactly one argument')
     }
-    const property = await evalExpression(page, e.args[0])
-
-    // check if the value for page property is empty
-    if (typeof property === 'object') {
-      if (property === null) return true
-      if ('type' in property) {
-        return (
-          property[property.type] === null || property[property.type] === ''
-        )
-      }
-    }
-    return property === null || property === ''
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const value = await evalExpression(page, e.args[0])
+    return value === null || value === ''
   }
 
   if (e.func === 'is_not_empty') {
     if (e.args.length !== 1) {
       throw new Error('is_not_empty takes exactly one argument')
     }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const value = await evalExpression(page, e.args[0])
     return value !== null && value !== ''
+  }
+
+  if (e.func === 'now') {
+    if (e.args.length !== 0) {
+      throw new Error('now takes no argument')
+    }
+    return new TimeValue(new Date())
   }
 
   throw new Error(`Unknown call expression: ${e.func}`)
 }
 
 async function evalMemberExpression(
-  page: PageObjectResponse,
-  e: MemberExpression,
+  page: PageObjectResponse | null,
+  e: MemberExpression
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any> {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   let value = await evalExpression(page, e.object)
   if (typeof value === 'object') {
     if (e.property.type === 'string') {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       return value[e.property.value]
     }
 
     if (e.property.type === 'identifier') {
-      if (value instanceof CustomValue) {
-        return value.get_field(e.property.value)
+      if (value instanceof NotionValue) {
+        throw new Error(
+          `Cannot access member of NotionValue: ${e.property.value}`
+        )
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       return value[e.property.value]
     }
 
     if (e.property.type === 'call_expression') {
       const args = await Promise.all(
         e.property.args.map(async (arg) => {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
           return await evalExpression(page, arg)
-        }),
+        })
       )
 
       // default to ObjectValue type
       if (typeof value === 'object' && !(value instanceof CustomValue)) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         value = new ObjectValue(value)
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       if (value[e.property.func] instanceof AsyncFunction) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         return await value[e.property.func](...args)
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
       return value[e.property.func](...args)
     }
 
     throw new Error('invalid member expression')
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-base-to-string, @typescript-eslint/restrict-template-expressions
   throw new Error(`Cannot access member of non-object: ${e.object}`)
 }
 
 async function evalBinaryExpression(
-  page: PageObjectResponse,
-  e: BinaryExpression,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<any> {
-  const left = await evalExpression(page, e.left)
-  const right = await evalExpression(page, e.right)
+  page: PageObjectResponse | null,
+  e: BinaryExpression
+): Promise<boolean> {
+  const left = Boolean(await evalExpression(page, e.left))
+  const right = Boolean(await evalExpression(page, e.right))
 
   switch (e.operator) {
     case TokenType.AND:
@@ -170,24 +189,29 @@ async function evalBinaryExpression(
       return left !== right
   }
 
-  throw new Error(`Unknown binary expression: ${e.operator}`)
+  throw new Error(`Unknown binary expression: ${e.operator.toString()}`)
 }
 
 async function evalUnaryExpression(
-  page: PageObjectResponse,
-  e: UnaryExpression,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<any> {
-  const expr = await evalExpression(page, e.expr)
+  page: PageObjectResponse | null,
+  e: UnaryExpression
+): Promise<boolean> {
+  const expr = Boolean(await evalExpression(page, e.expr))
   if (e.operator === TokenType.NOT) {
     return !expr
   }
 
-  throw new Error(`Unknown unary expression: ${e.operator}`)
+  throw new Error(`Unknown unary expression: ${e.operator.toString()}`)
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function evalIdentifier(page: PageObjectResponse, iden: Identifier): any {
+function evalIdentifier(
+  page: PageObjectResponse | null,
+  iden: Identifier
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): any {
+  if (page === null) {
+    throw new Error('Page is null')
+  }
   if (iden.value === 'page') {
     return new PageValue(page)
   }

@@ -10,6 +10,7 @@ export async function isDirectory(dir?: string): Promise<boolean> {
   try {
     const stats = await fsPromises.stat(dir)
     return stats.isDirectory()
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } catch (error) {
     return false
   }
@@ -23,10 +24,11 @@ interface Cache {
 const cacheDir = process.env.CACHE_DIR
 const cache: Cache = {
   running: false,
-  lastTimestamp: 0,
+  lastTimestamp: 0
 }
 
 async function loadCache(cacheDir?: string) {
+  if (!cacheDir) return
   if (!(await isDirectory(cacheDir))) {
     return
   }
@@ -34,16 +36,18 @@ async function loadCache(cacheDir?: string) {
   try {
     const cachePath = path.join(cacheDir, 'cache.json')
     const cacheData = await fsPromises.readFile(cachePath, 'utf8')
-    const cacheObj = JSON.parse(cacheData)
+    const cacheObj = JSON.parse(cacheData) as Cache
 
     cache.running = cacheObj.running
     cache.lastTimestamp = cacheObj.lastTimestamp
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } catch (error) {
     // ignore
   }
 }
 
 async function saveCache() {
+  if (!cacheDir) return
   if (!(await isDirectory(cacheDir))) {
     return
   }
@@ -51,7 +55,7 @@ async function saveCache() {
   const cacheData = JSON.stringify({
     pid: cache.running ? process.pid : undefined,
     running: cache.running,
-    lastTimestamp: cache.lastTimestamp,
+    lastTimestamp: cache.lastTimestamp
   })
   await fsPromises.writeFile(cachePath, cacheData, 'utf8')
 }
@@ -80,5 +84,5 @@ export default {
   getLastTimestamp,
   setLastTimestamp,
   startRun,
-  stopRun,
+  stopRun
 }

@@ -2,27 +2,30 @@ name: Docker CI
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   alpine:
     name: Build alpine
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Build Docker Image
         run: docker build -t nodop:alpine -f docker/Dockerfile.alpine .
+
+  bookworm:
+    name: Build bookworm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Build Docker Image
+        run: docker build -t nodop:bookworm -f docker/Dockerfile.bookworm .
 
   bullseye:
     name: Build bullseye
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Build Docker Image
         run: docker build -t nodop:bullseye -f docker/Dockerfile.bullseye .
-
-  buster:
-    name: Build buster
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Build Docker Image
-        run: docker build -t nodop:buster -f docker/Dockerfile.buster .

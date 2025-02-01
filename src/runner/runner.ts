@@ -6,6 +6,9 @@ import { Configuration, ConfigurationIndex, Job } from '../utils/config.js'
 import { evaluate } from '../expression/expr.js'
 import { getIntFromEnv } from '../utils/env_setting.js'
 import { getLogger } from '../utils/logger.js'
+import * as notionCache from '../notion/cache.js'
+import { RequestTimeoutError } from '@notionhq/client'
+import { isHTTPResponseError } from '@notionhq/client/build/src/errors.js'
 
 // exec is a function that executes a bash command
 const exec = util.promisify(child_process.exec)
@@ -28,7 +31,7 @@ export async function runNonStop(index: ConfigurationIndex) {
   while (!shouldStop) {
     if (counter % CHECK_INTERVAL === 0) {
       const wait = await runOnce(index)
-      counter == 0
+      counter = 0
 
       if (wait > 0) {
         // rate limited, wait for Retry-After seconds
@@ -64,6 +67,8 @@ export async function runWorkflow(index: ConfigurationIndex): Promise<number> {
     const wait = await runWorkflowForDB(databaseId, value.on, value.configs)
     if (wait > 0) return wait
   }
+
+  notionCache.cleanupPages()
   return 0
 }
 
@@ -77,7 +82,7 @@ export async function runWorkflow(index: ConfigurationIndex): Promise<number> {
 async function runWorkflowForDB(
   databaseId: string,
   on: Set<string>,
-  configs: Configuration[],
+  configs: Configuration[]
 ): Promise<number> {
   try {
     const pages = await getNewPagesFromDatabase(databaseId, on)
@@ -93,6 +98,15 @@ async function runWorkflowForDB(
     if (error instanceof RateLimitedError) {
       return error.getRetryAfter()
     }
+    if (RequestTimeoutError.isRequestTimeoutError(error)) {
+      getLogger().warn('request-timeout', { databaseId, error })
+      return CHECK_INTERVAL
+    }
+    if (isHTTPResponseError(error)) {
+      getLogger().warn('fetch-error', { databaseId, error })
+      return CHECK_INTERVAL
+    }
+
     throw error
   }
   return 0
@@ -115,7 +129,7 @@ async function runJobOnPage(page: PageObjectResponse, job: Job) {
         step: step.name,
         lang: 'bash',
         stdout,
-        stderr,
+        stderr
       })
     } else {
       // 'builtin'
@@ -126,7 +140,7 @@ async function runJobOnPage(page: PageObjectResponse, job: Job) {
         pageId: page.id,
         jobId: job.name,
         step: step.name,
-        lang: 'builtin',
+        lang: 'builtin'
       })
     }
   }
